@@ -3,24 +3,8 @@ include("formatting.jl")
 using .Color
 using .Formatting
 using Profile
-import Base.length
-import Base.push!
-import Base.in
 
 const Graph = Vector{Vector{Int}}
-mutable struct MyBS
-	len::Int
-	it::UInt64
-end
-
-function push!(bs::MyBS, v::Int)
-	bs.it |= 1 << v
-	bs.len += 1
-end
-
-length(bs::MyBS) = bs.len
-
-in(x, bs::MyBS) = (bs.it & 1 << x) != 0
 
 function dfs1!(g::Graph, explored::BitSet, v::Int, ordering::Vector{Int}, g2::Graph, numbering)
 	for v2 in g[v]
