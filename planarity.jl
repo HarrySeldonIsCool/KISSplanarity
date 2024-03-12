@@ -1,51 +1,97 @@
-using Base.Math
-using CUDA
+module Planarity
+export planarity, Graph
 
-global maxn = 16
+include("coloring.jl")
+using .Color
 
-function dfs_elp!(g, explored, num, parent, edges, lowpts)
-	num[0] = 0
-	stack = zeros(UInt8, 1)
-	nstack = zeros(UInt8, 1)
-	nd = 0
-	for i = 0:maxn
-		lowpts[i] = i
-	end
-	while !isempty(stack)
-		while last(stack) != 0
-			a = last(stack) & -last(stack)
-			stack[lastindex(stack)] &= last(stack) - 1
-			if a & explored != 0 && last(nstack) < num[exponent(a)]
-				lowpts[last(nstack)] = min(lowpts[last(nstack)], lowpts[num[exponent(a)]])
-			elseif a & explored != 0
-				lowpts[last(stack)] = min(lowpts[last(nstack)], num[exponent(a)])
-			else
-				explored |= a
-				push!(stack, g[exponent(a)])
-				nd += 1
-				edges[nd] = last(nstack)
-				push!(nstack, nd)
-				num[exponent(a)] = nd
-				break
+const Graph = Vector{Vector{Int}}
+
+function dfs1!(g::Graph, explored::BitSet, v::Int, ordering::Vector{Int}, g2::Graph, numbering)
+	for v2 in g[v]
+		t = ordering[v]
+		if v2 in explored
+			tx = ordering[v2]
+			if tx < g2[t][1]	#backward non-tree edge
+				push!(g2[t], tx)
+				push!(g2[tx], t)
+				numbering[t, tx] = length(numbering)+1
 			end
-		end
-		if last(stack) == 0
-			pop!(stack)
-			pop!(nstack)
+		else
+			push!(explored, v2)
+			top = length(explored)
+			ordering[v2] = top
+			push!(g2, [t])
+			push!(g2[t], top)
+			dfs1!(g, explored, v2, ordering, g2, numbering)
 		end
 	end
 end
 
-function dfs!(g)
-	explored = 0
-	num = zeros(1)
-	edges = Array{UInt8}(undef, 16)
-	while explored != 1 << maxn-1
-		i = exponent(~explored & explored+1)
-		parent = i
-		dfs_elp!(g, explored, num, i, parent, edges)
+function dfs!(g::Graph, numbering)::Graph
+	g2::Graph = []
+	explored = BitSet([])
+	ordering::Vector{Int} = ones(length(g))
+	for v in 1:length(g)
+		if !(v in explored)
+			push!(explored, v)
+			push!(g2, [0])
+			dfs1!(g, explored, v, ordering, g2, numbering)
+		end
 	end
-	return num
+	g2
 end
 
+struct Fringe
+	fr::Vector{Tuple{Int, Int}}
+	low::Int
+end
 
+function planarity1!(g::Graph, v::Int, explored::BitSet, ds::Coloring, numbering)
+	function fops(a::Fringe, b::Fringe)::Vector{Int}
+		map((x) -> numbering[x], filter((x) -> x[2] > b.low, a.fr))
+	end
+	fringe::Vector{Fringe} = []
+	low = v
+	for v2 in g[v][2:length(g[v])]
+		if v2 in explored
+			v2 < v || continue
+			#add back edge to DS
+			f2 = Fringe([(v, v2)], v2)
+			for f in fringe
+				similar!(ds, fops(f, f2))
+				opposite!(ds, fops(f, f2), fops(f2, f))
+			end
+			push!(fringe, f2)
+			low = min(low, f2.low)
+		else
+			union!(explored, [v2])
+			f2 = planarity1!(g, v2, explored, ds, numbering)
+			for f in fringe
+				similar!(ds, fops(f, f2))
+				similar!(ds, fops(f2, f))
+				opposite!(ds, fops(f, f2), fops(f2, f))
+			end
+			push!(fringe, f2)
+			low = min(low, f2.low)
+		end
+	end
+	Fringe(collect(Iterators.filter((x) -> x[2] < g[v][1], Iterators.flatmap((x) -> x.fr, fringe))), low)
+end
+
+function planarity(g::Graph)
+	numbering = Dict([])
+	edges = sum(map(length, g))÷2
+	edges <= 3*length(g)-6 || return false
+	g2 = dfs!(g, numbering)
+	ds = Coloring(fill([], edges), fill([], edges))
+	explored = BitSet([])
+	for v in 1:length(g2)
+		if !(v in explored)
+			union!(explored, [v])
+			planarity1!(g2, v, explored, ds, numbering)
+		end
+	end
+	validate(ds)
+end
+
+end

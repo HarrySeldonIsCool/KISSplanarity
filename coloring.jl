@@ -1,7 +1,7 @@
 module Color
 export Coloring, validate, opposite!, similar!
 
-const ColoringGraph = Vector{Set{Int}}
+const ColoringGraph = Vector{Vector{Int}}
 
 struct Coloring
 	opp::ColoringGraph
@@ -48,8 +48,8 @@ end
 function opposite!(col::Coloring, a::Vector{Int}, b::Vector{Int})
 	for v in a
 		for v2 in b
-			union!(col.opp[v], [v2])
-			union!(col.opp[v2], [v])
+			push!(col.opp[v], v2)
+			push!(col.opp[v2], v)
 		end
 	end
 end
@@ -58,7 +58,7 @@ function similar!(col::Coloring, a::Vector{Int})
 	for v in a
 		for v2 in a
 			if v != v2
-				union!(col.sim[v], [v2])
+				push!(col.sim[v], v2)
 			end
 		end
 	end

@@ -1,12 +1,12 @@
-include("coloring.jl")
-include("formatting.jl")
-using .Color
-using .Formatting
-using Profile
+module Planarity2
+export planarity, Graph
+
+include("coloring2.jl")
+using .Color2
 
 const Graph = Vector{Vector{Int}}
 
-function dfs1!(g::Graph, explored::BitSet, v::Int, ordering::Vector{Int}, g2::Graph, numbering)
+function dfs1!(g::Graph, explored::BitSet, v::Int, ordering::Vector{Int}, g2::Graph, edges)
 	for v2 in g[v]
 		t = ordering[v]
 		if v2 in explored
@@ -14,7 +14,7 @@ function dfs1!(g::Graph, explored::BitSet, v::Int, ordering::Vector{Int}, g2::Gr
 			if tx < g2[t][1]	#backward non-tree edge
 				push!(g2[t], tx)
 				push!(g2[tx], t)
-				numbering[t, tx] = length(numbering)+1
+				push!(edges, (t, tx))
 			end
 		else
 			push!(explored, v2)
@@ -22,12 +22,12 @@ function dfs1!(g::Graph, explored::BitSet, v::Int, ordering::Vector{Int}, g2::Gr
 			ordering[v2] = top
 			push!(g2, [t])
 			push!(g2[t], top)
-			dfs1!(g, explored, v2, ordering, g2, numbering)
+			dfs1!(g, explored, v2, ordering, g2, edges)
 		end
 	end
 end
 
-function dfs!(g::Graph, numbering)::Graph
+function dfs!(g::Graph, edges)::Graph
 	g2::Graph = []
 	explored = BitSet([])
 	ordering::Vector{Int} = ones(length(g))
@@ -35,7 +35,7 @@ function dfs!(g::Graph, numbering)::Graph
 		if !(v in explored)
 			push!(explored, v)
 			push!(g2, [0])
-			dfs1!(g, explored, v, ordering, g2, numbering)
+			dfs1!(g, explored, v, ordering, g2, edges)
 		end
 	end
 	g2
@@ -46,9 +46,9 @@ struct Fringe
 	low::Int
 end
 
-function planarity1!(g::Graph, v::Int, explored::BitSet, ds::Coloring, numbering)
-	function fops(a::Fringe, b::Fringe)::Vector{Int}
-		map((x) -> numbering[x], filter((x) -> x[2] > b.low, a.fr))
+function planarity1!(g::Graph, v::Int, explored::BitSet, ds::Coloring)
+	function fops(a::Fringe, b::Fringe)
+		filter((x) -> x[2] > b.low, a.fr)
 	end
 	fringe::Vector{Fringe} = []
 	low = v
@@ -64,8 +64,8 @@ function planarity1!(g::Graph, v::Int, explored::BitSet, ds::Coloring, numbering
 			push!(fringe, f2)
 			low = min(low, f2.low)
 		else
-			union!(explored, [v2])
-			f2 = planarity1!(g, v2, explored, ds, numbering)
+			push!(explored, v2)
+			f2 = planarity1!(g, v2, explored, ds)
 			for f in fringe
 				similar!(ds, fops(f, f2))
 				similar!(ds, fops(f2, f))
@@ -79,22 +79,20 @@ function planarity1!(g::Graph, v::Int, explored::BitSet, ds::Coloring, numbering
 end
 
 function planarity(g::Graph)
-	numbering = Dict([])
-	edges = sum(map(length, g))÷2
-	edges <= 3*length(g)-6 || return false
-	g2 = dfs!(g, numbering)
-	ds = Coloring(fill(Set([]), edges), fill(Set([]), edges))
+	edges::Vector{Tuple{Int, Int}} = []
+	n = length(g)
+	e = sum(map(length, g))÷2
+	e <= 3*n-6 || return false
+	g2 = dfs!(g, edges)
+	ds = Coloring(fill([], (n, n)), fill([], (n, n)))
 	explored = BitSet([])
 	for v in 1:length(g2)
 		if !(v in explored)
-			union!(explored, [v])
-			planarity1!(g2, v, explored, ds, numbering)
+			push!(explored, v)
+			planarity1!(g2, v, explored, ds)
 		end
 	end
-	validate(ds)
+	validate(ds, edges)
 end
 
-while !eof(stdin)
-	g::Graph = graph()
-	println(planarity(g))
 end
